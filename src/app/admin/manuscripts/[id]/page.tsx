@@ -460,7 +460,7 @@ export default function ManuscriptDetailPage({ params }: PageProps) {
                           <div className="flex-1">
                             <div className="flex items-center gap-2">
                               <span className="font-medium text-gray-900">
-                                {template.month}월 {template.week}주
+                                {template.month}월{template.week ? ` ${template.week}주` : ''}
                               </span>
                               <Badge variant={getConfirmRate(template) >= 70 ? 'success' : 'default'}>
                                 {getConfirmRate(template)}%

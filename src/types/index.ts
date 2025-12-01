@@ -23,7 +23,7 @@ export interface Template {
   id: string;
   business_type: string;
   month: number;
-  week: number;
+  week: number | null;
   title: string;
   content: string;
   topic: string | null;
@@ -80,24 +80,21 @@ export interface Database {
 export const BUSINESS_TYPES = [
   '수학학원',
   '영어학원',
+  '국어학원',
+  '종합학원',
   '태권도학원',
-  '피아노학원',
   '미술학원',
-  '검도학원',
-  '합기도학원',
-  '발레학원',
-  '수영장',
+  '음악학원',
+  '반찬가게',
+  '식당',
+  '카페',
+  '에스테틱',
+  '피부과',
   '헬스장',
   '필라테스',
-  '요가',
-  '병원',
-  '치과',
-  '한의원',
-  '동물병원',
-  '미용실',
-  '네일샵',
-  '카페',
-  '음식점',
+  '안경원',
+  '세탁소',
+  '인테리어',
   '기타',
 ] as const;
 

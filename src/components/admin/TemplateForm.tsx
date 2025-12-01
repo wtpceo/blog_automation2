@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Input from '@/components/ui/Input';
 import Select from '@/components/ui/Select';
@@ -30,11 +30,22 @@ const sampleClient = {
   updated_at: new Date().toISOString(),
 };
 
+const REPLACEMENT_VARIABLES = [
+  { key: '{{지역}}', description: '광고주 지역' },
+  { key: '{{업체명}}', description: '광고주 업체명' },
+  { key: '{{대표서비스}}', description: '대표 서비스' },
+  { key: '{{차별점}}', description: '차별화 포인트' },
+  { key: '{{연락처}}', description: '연락처' },
+];
+
 export default function TemplateForm({ initialData, isEditing = false }: TemplateFormProps) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showPreview, setShowPreview] = useState(false);
+  const titleRef = useRef<HTMLInputElement>(null);
+  const contentRef = useRef<HTMLTextAreaElement>(null);
+  const [activeField, setActiveField] = useState<'title' | 'content'>('content');
 
   const [formData, setFormData] = useState({
     business_type: initialData?.business_type || '',
@@ -52,6 +63,32 @@ export default function TemplateForm({ initialData, isEditing = false }: Templat
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
+  const insertVariable = (variable: string) => {
+    if (activeField === 'title' && titleRef.current) {
+      const input = titleRef.current;
+      const start = input.selectionStart || 0;
+      const end = input.selectionEnd || 0;
+      const newValue = formData.title.slice(0, start) + variable + formData.title.slice(end);
+      setFormData((prev) => ({ ...prev, title: newValue }));
+      // 커서 위치 복원
+      setTimeout(() => {
+        input.focus();
+        input.setSelectionRange(start + variable.length, start + variable.length);
+      }, 0);
+    } else if (activeField === 'content' && contentRef.current) {
+      const textarea = contentRef.current;
+      const start = textarea.selectionStart || 0;
+      const end = textarea.selectionEnd || 0;
+      const newValue = formData.content.slice(0, start) + variable + formData.content.slice(end);
+      setFormData((prev) => ({ ...prev, content: newValue }));
+      // 커서 위치 복원
+      setTimeout(() => {
+        textarea.focus();
+        textarea.setSelectionRange(start + variable.length, start + variable.length);
+      }, 0);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -61,13 +98,16 @@ export default function TemplateForm({ initialData, isEditing = false }: Templat
       const url = isEditing ? `/api/templates/${initialData?.id}` : '/api/templates';
       const method = isEditing ? 'PUT' : 'POST';
 
+      // week가 빈 문자열이면 null로 처리
+      const weekValue = formData.week === '' ? null : parseInt(formData.week);
+
       const response = await fetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...formData,
           month: parseInt(formData.month),
-          week: parseInt(formData.week),
+          week: weekValue,
         }),
       });
 
@@ -95,10 +135,14 @@ export default function TemplateForm({ initialData, isEditing = false }: Templat
     label: `${i + 1}월`,
   }));
 
-  const weekOptions = Array.from({ length: 5 }, (_, i) => ({
-    value: (i + 1).toString(),
-    label: `${i + 1}주차`,
-  }));
+  const weekOptions = [
+    { value: '', label: '없음' },
+    { value: '1', label: '1주차' },
+    { value: '2', label: '2주차' },
+    { value: '3', label: '3주차' },
+    { value: '4', label: '4주차' },
+    { value: '5', label: '5주차' },
+  ];
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
@@ -110,13 +154,25 @@ export default function TemplateForm({ initialData, isEditing = false }: Templat
 
       <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
         <h4 className="font-medium text-blue-800 mb-2">치환 변수 안내</h4>
-        <p className="text-sm text-blue-700">
-          제목과 본문에 다음 변수를 사용하세요: <br />
-          <code className="bg-blue-100 px-1 rounded">{'{{지역}}'}</code>{' '}
-          <code className="bg-blue-100 px-1 rounded">{'{{업체명}}'}</code>{' '}
-          <code className="bg-blue-100 px-1 rounded">{'{{대표서비스}}'}</code>{' '}
-          <code className="bg-blue-100 px-1 rounded">{'{{차별점}}'}</code>{' '}
-          <code className="bg-blue-100 px-1 rounded">{'{{연락처}}'}</code>
+        <p className="text-sm text-blue-700 mb-3">
+          클릭하면 현재 선택된 필드(제목/본문)의 커서 위치에 삽입됩니다.
+        </p>
+        <div className="flex flex-wrap gap-2">
+          {REPLACEMENT_VARIABLES.map((v) => (
+            <button
+              key={v.key}
+              type="button"
+              onClick={() => insertVariable(v.key)}
+              className="inline-flex items-center gap-1 px-3 py-1.5 bg-blue-100 hover:bg-blue-200 text-blue-800 rounded-lg text-sm font-medium transition-colors cursor-pointer"
+              title={v.description}
+            >
+              <code>{v.key}</code>
+              <span className="text-blue-600 text-xs">({v.description})</span>
+            </button>
+          ))}
+        </div>
+        <p className="text-xs text-blue-600 mt-2">
+          현재 선택: <span className="font-medium">{activeField === 'title' ? '제목' : '본문'}</span>
         </p>
       </div>
 
@@ -124,7 +180,7 @@ export default function TemplateForm({ initialData, isEditing = false }: Templat
         <Select
           id="business_type"
           name="business_type"
-          label="업종"
+          label="업종 *"
           value={formData.business_type}
           onChange={handleChange}
           options={businessTypeOptions}
@@ -134,7 +190,7 @@ export default function TemplateForm({ initialData, isEditing = false }: Templat
         <Select
           id="month"
           name="month"
-          label="월"
+          label="월 *"
           value={formData.month}
           onChange={handleChange}
           options={monthOptions}
@@ -148,39 +204,47 @@ export default function TemplateForm({ initialData, isEditing = false }: Templat
           value={formData.week}
           onChange={handleChange}
           options={weekOptions}
-          required
         />
       </div>
 
       <Input
         id="topic"
         name="topic"
-        label="주제 태그"
+        label="주제 *"
         value={formData.topic}
         onChange={handleChange}
-        placeholder="예: 신학기 준비, 겨울방학 특강"
+        required
+        placeholder="예: 겨울방학 영어 선행학습"
       />
 
-      <Input
-        id="title"
-        name="title"
-        label="제목"
-        value={formData.title}
-        onChange={handleChange}
-        required
-        placeholder="예: {{지역}} {{업체명}}에서 알려드리는 학습 비법"
-      />
+      <div>
+        <Input
+          ref={titleRef}
+          id="title"
+          name="title"
+          label="제목 *"
+          value={formData.title}
+          onChange={handleChange}
+          onFocus={() => setActiveField('title')}
+          required
+          placeholder="예: {{지역}} {{업체명}}에서 알려드리는 학습 비법"
+        />
+      </div>
 
-      <Textarea
-        id="content"
-        name="content"
-        label="본문"
-        value={formData.content}
-        onChange={handleChange}
-        required
-        rows={15}
-        placeholder="원고 본문을 입력하세요..."
-      />
+      <div>
+        <Textarea
+          ref={contentRef}
+          id="content"
+          name="content"
+          label="본문 *"
+          value={formData.content}
+          onChange={handleChange}
+          onFocus={() => setActiveField('content')}
+          required
+          rows={20}
+          placeholder="원고 본문을 입력하세요. 치환 변수를 클릭하여 삽입할 수 있습니다."
+        />
+      </div>
 
       <div className="flex gap-4">
         <Button type="submit" loading={loading}>

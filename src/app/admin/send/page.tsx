@@ -492,11 +492,11 @@ export default function SendPage() {
                 </TableHeader>
                 <TableBody>
                   {templates
-                    .filter((t) => !week || t.week.toString() === week)
+                    .filter((t) => !week || (t.week !== null && t.week.toString() === week))
                     .map((template) => (
                       <TableRow key={template.id}>
                         <TableCell>
-                          {template.month}월 {template.week}주차
+                          {template.month}월 {template.week ? `${template.week}주차` : ''}
                         </TableCell>
                         <TableCell>{template.topic || '-'}</TableCell>
                         <TableCell className="max-w-xs truncate">{template.title}</TableCell>
@@ -552,7 +552,7 @@ export default function SendPage() {
               <p className="text-sm text-blue-800">
                 선택된 템플릿: <strong>{selectedTemplate.title}</strong>
                 <br />
-                업종: {selectedTemplate.business_type} | {selectedTemplate.month}월 {selectedTemplate.week}주차
+                업종: {selectedTemplate.business_type} | {selectedTemplate.month}월{selectedTemplate.week ? ` ${selectedTemplate.week}주차` : ''}
               </p>
             </div>
 
@@ -850,7 +850,7 @@ export default function SendPage() {
           <div>
             <div className="mb-4 p-3 bg-gray-50 rounded-lg">
               <p className="text-sm text-gray-600">
-                {previewTemplate.business_type} | {previewTemplate.month}월 {previewTemplate.week}주차
+                {previewTemplate.business_type} | {previewTemplate.month}월{previewTemplate.week ? ` ${previewTemplate.week}주차` : ''}
                 {previewTemplate.topic && ` | ${previewTemplate.topic}`}
               </p>
             </div>

@@ -145,7 +145,7 @@ export default function TemplatesPage() {
                     <TableRow key={template.id}>
                       <TableCell>{template.business_type}</TableCell>
                       <TableCell>
-                        {template.month}월 {template.week}주차
+                        {template.month}월 {template.week ? `${template.week}주차` : ''}
                       </TableCell>
                       <TableCell>{template.topic || '-'}</TableCell>
                       <TableCell className="max-w-xs truncate">{template.title}</TableCell>
