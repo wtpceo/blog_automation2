@@ -95,3 +95,26 @@ INSERT INTO templates (business_type, month, week, title, topic, content) VALUES
 {{차별점}}
 
 상담 문의: {{연락처}}');
+
+-- 알림톡 발송 로그 테이블
+CREATE TABLE IF NOT EXISTS alimtalk_logs (
+  id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+  client_id UUID REFERENCES clients(id) ON DELETE SET NULL,
+  manuscript_id UUID REFERENCES manuscripts(id) ON DELETE SET NULL,
+  template_code VARCHAR(20) NOT NULL,
+  phone VARCHAR(20) NOT NULL,
+  status VARCHAR(20) NOT NULL CHECK (status IN ('success', 'fail')),
+  response JSONB,
+  variables JSONB,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- 알림톡 로그 인덱스
+CREATE INDEX IF NOT EXISTS idx_alimtalk_logs_client_id ON alimtalk_logs(client_id);
+CREATE INDEX IF NOT EXISTS idx_alimtalk_logs_manuscript_id ON alimtalk_logs(manuscript_id);
+CREATE INDEX IF NOT EXISTS idx_alimtalk_logs_template_code ON alimtalk_logs(template_code);
+CREATE INDEX IF NOT EXISTS idx_alimtalk_logs_status ON alimtalk_logs(status);
+CREATE INDEX IF NOT EXISTS idx_alimtalk_logs_created_at ON alimtalk_logs(created_at);
+
+-- RLS 비활성화
+ALTER TABLE alimtalk_logs DISABLE ROW LEVEL SECURITY;
