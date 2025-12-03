@@ -166,22 +166,29 @@ export async function sendAlimtalk(request: AlimtalkRequest): Promise<AlimtalkRe
 
     const data = await response.json();
 
-    if (response.ok && data.destinations?.[0]) {
-      const dest = data.destinations[0];
-      return {
-        success: dest.code === 'A000' || dest.result === 'SUCCESS',
-        msgKey: dest.msgKey,
-        code: dest.code,
-        result: dest.result
-      };
+    console.log('[BizGo API Response]', JSON.stringify(data, null, 2));
+
+    // 응답 구조: { common: {...}, data: { code, result, data: { destinations: [...] } } }
+    if (response.ok && data.common?.authCode === 'A000') {
+      const destinations = data.data?.data?.destinations;
+      if (destinations?.[0]) {
+        const dest = destinations[0];
+        return {
+          success: dest.code === 'A000' || dest.result === 'Success',
+          msgKey: dest.msgKey,
+          code: dest.code,
+          result: dest.result
+        };
+      }
     }
 
     return {
       success: false,
-      code: data.code,
-      error: data.message || data.error || 'Unknown error'
+      code: data.common?.authCode || data.data?.code,
+      error: data.common?.authResult || data.data?.result || 'Unknown error'
     };
   } catch (error) {
+    console.error('[BizGo API Error]', error);
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Network error'
