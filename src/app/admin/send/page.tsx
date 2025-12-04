@@ -22,6 +22,7 @@ interface ConfirmLink {
 
 interface RewrittenContent {
   clientId: string;
+  templateId: string;
   title: string;
   content: string;
 }
@@ -30,12 +31,12 @@ export default function SendPage() {
   const [step, setStep] = useState<Step>(1);
   const [loading, setLoading] = useState(false);
 
-  // Step 1: Template selection
+  // Step 1: Template selection (다중 선택 지원)
   const [businessType, setBusinessType] = useState('');
   const [month, setMonth] = useState('');
   const [week, setWeek] = useState('');
   const [templates, setTemplates] = useState<Template[]>([]);
-  const [selectedTemplate, setSelectedTemplate] = useState<Template | null>(null);
+  const [selectedTemplates, setSelectedTemplates] = useState<Template[]>([]); // 다중 선택
   const [previewTemplate, setPreviewTemplate] = useState<Template | null>(null);
 
   // Step 2: Client selection
@@ -46,6 +47,7 @@ export default function SendPage() {
 
   // Step 3: Preview and send
   const [previewClient, setPreviewClient] = useState<Client | null>(null);
+  const [previewTemplateIndex, setPreviewTemplateIndex] = useState(0); // 어떤 템플릿 원고를 보고 있는지
   const [confirmLinks, setConfirmLinks] = useState<ConfirmLink[]>([]);
   const [sendComplete, setSendComplete] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -54,7 +56,7 @@ export default function SendPage() {
   const [enableRewrite, setEnableRewrite] = useState(true);
   const [rewriting, setRewriting] = useState(false);
   const [rewriteProgress, setRewriteProgress] = useState({ current: 0, total: 0 });
-  const [rewrittenContents, setRewrittenContents] = useState<Map<string, RewrittenContent>>(new Map());
+  const [rewrittenContents, setRewrittenContents] = useState<Map<string, RewrittenContent>>(new Map()); // key: clientId_templateId
   const [showOriginal, setShowOriginal] = useState(false);
   const [rewriteError, setRewriteError] = useState<string | null>(null);
   const [autoRewriteStarted, setAutoRewriteStarted] = useState(false);
@@ -96,11 +98,11 @@ export default function SendPage() {
   }, [businessType, month]);
 
   const fetchClients = useCallback(async () => {
-    if (!selectedTemplate) return;
+    if (selectedTemplates.length === 0) return;
     setLoading(true);
 
     const params = new URLSearchParams({
-      business_type: selectedTemplate.business_type,
+      business_type: selectedTemplates[0].business_type,
       is_active: 'true',
       client_type: 'template',
       limit: '500',
@@ -110,7 +112,7 @@ export default function SendPage() {
     const result = await response.json();
     setClients(result.data || []);
     setLoading(false);
-  }, [selectedTemplate]);
+  }, [selectedTemplates]);
 
   useEffect(() => {
     fetchTemplates();
@@ -124,61 +126,67 @@ export default function SendPage() {
 
   // Auto-rewrite when entering step 3 with rewrite enabled
   const runAutoRewrite = useCallback(async () => {
-    if (!selectedTemplate || !enableRewrite || selectedClientIds.length === 0) return;
+    if (selectedTemplates.length === 0 || !enableRewrite || selectedClientIds.length === 0) return;
 
     setRewriting(true);
     setRewriteError(null);
-    setRewriteProgress({ current: 0, total: selectedClientIds.length });
+    const totalCount = selectedClientIds.length * selectedTemplates.length;
+    setRewriteProgress({ current: 0, total: totalCount });
 
     abortControllerRef.current = new AbortController();
     const selectedClients = clients.filter((c) => selectedClientIds.includes(c.id));
 
-    for (let i = 0; i < selectedClients.length; i++) {
-      if (abortControllerRef.current?.signal.aborted) break;
+    let currentProgress = 0;
+    for (const template of selectedTemplates) {
+      for (const client of selectedClients) {
+        if (abortControllerRef.current?.signal.aborted) break;
 
-      const client = selectedClients[i];
-      setRewriteProgress({ current: i + 1, total: selectedClients.length });
+        currentProgress++;
+        setRewriteProgress({ current: currentProgress, total: totalCount });
 
-      // Skip if already rewritten
-      if (rewrittenContents.has(client.id)) continue;
+        const key = `${client.id}_${template.id}`;
+        // Skip if already rewritten
+        if (rewrittenContents.has(key)) continue;
 
-      const originalTitle = replaceVariables(selectedTemplate.title, client);
-      const originalContent = replaceVariables(selectedTemplate.content, client);
+        const originalTitle = replaceVariables(template.title, client);
+        const originalContent = replaceVariables(template.content, client);
 
-      try {
-        const response = await fetch('/api/rewrite', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            title: originalTitle,
-            content: originalContent,
-          }),
-          signal: abortControllerRef.current?.signal,
-        });
-
-        const result = await response.json();
-
-        if (response.ok) {
-          setRewrittenContents((prev) => {
-            const newMap = new Map(prev);
-            newMap.set(client.id, {
-              clientId: client.id,
-              title: result.title,
-              content: result.content,
-            });
-            return newMap;
+        try {
+          const response = await fetch('/api/rewrite', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              title: originalTitle,
+              content: originalContent,
+            }),
+            signal: abortControllerRef.current?.signal,
           });
-        }
-      } catch (err) {
-        if (err instanceof Error && err.name === 'AbortError') {
-          break;
+
+          const result = await response.json();
+
+          if (response.ok) {
+            setRewrittenContents((prev) => {
+              const newMap = new Map(prev);
+              newMap.set(key, {
+                clientId: client.id,
+                templateId: template.id,
+                title: result.title,
+                content: result.content,
+              });
+              return newMap;
+            });
+          }
+        } catch (err) {
+          if (err instanceof Error && err.name === 'AbortError') {
+            break;
+          }
         }
       }
     }
 
     setRewriting(false);
     abortControllerRef.current = null;
-  }, [selectedTemplate, enableRewrite, selectedClientIds, clients, rewrittenContents]);
+  }, [selectedTemplates, enableRewrite, selectedClientIds, clients, rewrittenContents]);
 
   // Trigger auto-rewrite when entering step 3
   useEffect(() => {
@@ -188,8 +196,26 @@ export default function SendPage() {
     }
   }, [step, enableRewrite, autoRewriteStarted, selectedClientIds.length, runAutoRewrite]);
 
-  const handleTemplateSelect = (template: Template) => {
-    setSelectedTemplate(template);
+  const handleTemplateToggle = (template: Template) => {
+    setSelectedTemplates((prev) => {
+      const exists = prev.find((t) => t.id === template.id);
+      if (exists) {
+        return prev.filter((t) => t.id !== template.id);
+      }
+      if (prev.length >= 2) {
+        // 최대 2개까지만 선택 가능
+        alert('템플릿은 최대 2개까지 선택할 수 있습니다.');
+        return prev;
+      }
+      return [...prev, template];
+    });
+  };
+
+  const handleGoToStep2 = () => {
+    if (selectedTemplates.length === 0) {
+      alert('템플릿을 선택해주세요.');
+      return;
+    }
     setStep(2);
   };
 
@@ -219,14 +245,12 @@ export default function SendPage() {
     setStep(3);
   };
 
-  const handleRewriteSingle = async (client: Client) => {
-    if (!selectedTemplate) return;
-
+  const handleRewriteSingle = async (client: Client, template: Template) => {
     setRewriting(true);
     setRewriteError(null);
 
-    const originalTitle = replaceVariables(selectedTemplate.title, client);
-    const originalContent = replaceVariables(selectedTemplate.content, client);
+    const originalTitle = replaceVariables(template.title, client);
+    const originalContent = replaceVariables(template.content, client);
 
     try {
       const response = await fetch('/api/rewrite', {
@@ -241,10 +265,12 @@ export default function SendPage() {
       const result = await response.json();
 
       if (response.ok) {
+        const key = `${client.id}_${template.id}`;
         setRewrittenContents((prev) => {
           const newMap = new Map(prev);
-          newMap.set(client.id, {
+          newMap.set(key, {
             clientId: client.id,
+            templateId: template.id,
             title: result.title,
             content: result.content,
           });
@@ -261,17 +287,25 @@ export default function SendPage() {
   };
 
   const handleSend = async () => {
-    if (!selectedTemplate || selectedClientIds.length === 0) return;
+    if (selectedTemplates.length === 0 || selectedClientIds.length === 0) return;
     setLoading(true);
 
     try {
-      const rewrittenData: Record<string, { title: string; content: string }> = {};
+      // 템플릿별로 리라이팅된 컨텐츠 정리
+      const rewrittenData: Record<string, Record<string, { title: string; content: string }>> = {};
       if (enableRewrite) {
-        rewrittenContents.forEach((content, clientId) => {
-          rewrittenData[clientId] = {
-            title: content.title,
-            content: content.content,
-          };
+        selectedTemplates.forEach((template) => {
+          rewrittenData[template.id] = {};
+          selectedClientIds.forEach((clientId) => {
+            const key = `${clientId}_${template.id}`;
+            const content = rewrittenContents.get(key);
+            if (content) {
+              rewrittenData[template.id][clientId] = {
+                title: content.title,
+                content: content.content,
+              };
+            }
+          });
         });
       }
 
@@ -279,7 +313,7 @@ export default function SendPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          template_id: selectedTemplate.id,
+          template_ids: selectedTemplates.map((t) => t.id),
           client_ids: selectedClientIds,
           rewritten_contents: enableRewrite ? rewrittenData : undefined,
         }),
@@ -319,13 +353,14 @@ export default function SendPage() {
     setMonth('');
     setWeek('');
     setTemplates([]);
-    setSelectedTemplate(null);
+    setSelectedTemplates([]);
     setPreviewTemplate(null);
     setClients([]);
     setSelectedClientIds([]);
     setClientSearch('');
     setManagerFilter('');
     setPreviewClient(null);
+    setPreviewTemplateIndex(0);
     setConfirmLinks([]);
     setSendComplete(false);
     setCopiedId(null);
@@ -448,7 +483,14 @@ export default function SendPage() {
       {step === 1 && (
         <Card>
           <CardHeader>
-            <CardTitle>Step 1: 템플릿 선택</CardTitle>
+            <div className="flex justify-between items-center">
+              <CardTitle>Step 1: 템플릿 선택 (최대 2개)</CardTitle>
+              {selectedTemplates.length > 0 && (
+                <Button onClick={handleGoToStep2}>
+                  다음 ({selectedTemplates.length}개 선택됨)
+                </Button>
+              )}
+            </div>
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
@@ -473,6 +515,29 @@ export default function SendPage() {
               />
             </div>
 
+            {/* 선택된 템플릿 표시 */}
+            {selectedTemplates.length > 0 && (
+              <div className="mb-4 p-4 bg-blue-50 rounded-lg">
+                <p className="text-sm font-medium text-blue-800 mb-2">선택된 템플릿:</p>
+                <div className="space-y-2">
+                  {selectedTemplates.map((t, idx) => (
+                    <div key={t.id} className="flex items-center justify-between bg-white p-2 rounded border">
+                      <span className="text-sm">
+                        <strong>원고 {idx + 1}:</strong> {t.title}
+                      </span>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => handleTemplateToggle(t)}
+                      >
+                        제거
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {loading ? (
               <div className="text-center py-8 text-gray-500">로딩 중...</div>
             ) : templates.length === 0 ? (
@@ -483,6 +548,7 @@ export default function SendPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
+                    <TableHead className="w-12"></TableHead>
                     <TableHead>월/주차</TableHead>
                     <TableHead>주제</TableHead>
                     <TableHead>제목</TableHead>
@@ -493,28 +559,37 @@ export default function SendPage() {
                 <TableBody>
                   {templates
                     .filter((t) => !week || (t.week !== null && t.week.toString() === week))
-                    .map((template) => (
-                      <TableRow key={template.id}>
-                        <TableCell>
-                          {template.month}월 {template.week ? `${template.week}주차` : ''}
-                        </TableCell>
-                        <TableCell>{template.topic || '-'}</TableCell>
-                        <TableCell className="max-w-xs truncate">{template.title}</TableCell>
-                        <TableCell>
-                          <Badge
-                            variant={
-                              getConfirmRate(template) >= 80
-                                ? 'success'
-                                : getConfirmRate(template) >= 50
-                                ? 'warning'
-                                : 'default'
-                            }
-                          >
-                            {getConfirmRate(template)}%
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex gap-2">
+                    .map((template) => {
+                      const isSelected = selectedTemplates.some((t) => t.id === template.id);
+                      return (
+                        <TableRow key={template.id} className={isSelected ? 'bg-blue-50' : ''}>
+                          <TableCell>
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={() => handleTemplateToggle(template)}
+                              className="w-4 h-4 rounded border-gray-300"
+                            />
+                          </TableCell>
+                          <TableCell>
+                            {template.month}월 {template.week ? `${template.week}주차` : ''}
+                          </TableCell>
+                          <TableCell>{template.topic || '-'}</TableCell>
+                          <TableCell className="max-w-xs truncate">{template.title}</TableCell>
+                          <TableCell>
+                            <Badge
+                              variant={
+                                getConfirmRate(template) >= 80
+                                  ? 'success'
+                                  : getConfirmRate(template) >= 50
+                                  ? 'warning'
+                                  : 'default'
+                              }
+                            >
+                              {getConfirmRate(template)}%
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
                             <Button
                               size="sm"
                               variant="ghost"
@@ -522,13 +597,10 @@ export default function SendPage() {
                             >
                               미리보기
                             </Button>
-                            <Button size="sm" onClick={() => handleTemplateSelect(template)}>
-                              선택
-                            </Button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
                 </TableBody>
               </Table>
             )}
@@ -537,7 +609,7 @@ export default function SendPage() {
       )}
 
       {/* Step 2: Client Selection */}
-      {step === 2 && selectedTemplate && (
+      {step === 2 && selectedTemplates.length > 0 && (
         <Card>
           <CardHeader>
             <div className="flex justify-between items-center">
@@ -549,10 +621,16 @@ export default function SendPage() {
           </CardHeader>
           <CardContent>
             <div className="mb-4 p-4 bg-blue-50 rounded-lg">
-              <p className="text-sm text-blue-800">
-                선택된 템플릿: <strong>{selectedTemplate.title}</strong>
-                <br />
-                업종: {selectedTemplate.business_type} | {selectedTemplate.month}월{selectedTemplate.week ? ` ${selectedTemplate.week}주차` : ''}
+              <p className="text-sm text-blue-800 mb-2">
+                선택된 템플릿 ({selectedTemplates.length}개):
+              </p>
+              {selectedTemplates.map((t, idx) => (
+                <p key={t.id} className="text-sm text-blue-700">
+                  <strong>원고 {idx + 1}:</strong> {t.title}
+                </p>
+              ))}
+              <p className="text-xs text-blue-600 mt-2">
+                업종: {selectedTemplates[0].business_type} | {selectedTemplates[0].month}월{selectedTemplates[0].week ? ` ${selectedTemplates[0].week}주차` : ''}
               </p>
             </div>
 
@@ -659,7 +737,7 @@ export default function SendPage() {
       )}
 
       {/* Step 3: Preview and Send */}
-      {step === 3 && selectedTemplate && (
+      {step === 3 && selectedTemplates.length > 0 && (
         <Card>
           <CardHeader>
             <div className="flex justify-between items-center">
@@ -700,7 +778,7 @@ export default function SendPage() {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                   </svg>
                   <span className="text-green-800 font-medium">
-                    리라이팅 완료: {rewrittenContents.size}/{selectedClientIds.length}건
+                    리라이팅 완료: {rewrittenContents.size}/{selectedClientIds.length * selectedTemplates.length}건
                   </span>
                 </div>
                 {rewriteError && (
@@ -719,35 +797,44 @@ export default function SendPage() {
               {/* Client List */}
               <div>
                 <h3 className="font-medium text-gray-900 mb-3">
-                  선택된 광고주 ({selectedClientIds.length}개)
+                  선택된 광고주 ({selectedClientIds.length}개) × 원고 {selectedTemplates.length}개
                 </h3>
                 <div className="border rounded-lg max-h-96 overflow-y-auto">
                   {clients
                     .filter((c) => selectedClientIds.includes(c.id))
-                    .map((client) => (
-                      <button
-                        key={client.id}
-                        onClick={() => setPreviewClient(client)}
-                        disabled={rewriting}
-                        className={`w-full text-left p-3 border-b last:border-b-0 hover:bg-gray-50 disabled:opacity-50 ${
-                          previewClient?.id === client.id ? 'bg-blue-50' : 'bg-white'
-                        }`}
-                      >
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <span className="font-medium text-gray-900">{client.name}</span>
-                            <span className="text-gray-500 ml-2">({client.region})</span>
+                    .map((client) => {
+                      // 해당 클라이언트의 모든 템플릿 리라이팅 완료 여부
+                      const allDone = selectedTemplates.every((t) =>
+                        rewrittenContents.has(`${client.id}_${t.id}`)
+                      );
+                      return (
+                        <button
+                          key={client.id}
+                          onClick={() => {
+                            setPreviewClient(client);
+                            setPreviewTemplateIndex(0);
+                          }}
+                          disabled={rewriting}
+                          className={`w-full text-left p-3 border-b last:border-b-0 hover:bg-gray-50 disabled:opacity-50 ${
+                            previewClient?.id === client.id ? 'bg-blue-50' : 'bg-white'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <span className="font-medium text-gray-900">{client.name}</span>
+                              <span className="text-gray-500 ml-2">({client.region})</span>
+                            </div>
+                            {enableRewrite && (
+                              allDone ? (
+                                <Badge variant="success">완료</Badge>
+                              ) : rewriting ? (
+                                <Badge variant="warning">대기중</Badge>
+                              ) : null
+                            )}
                           </div>
-                          {enableRewrite && (
-                            rewrittenContents.has(client.id) ? (
-                              <Badge variant="success">완료</Badge>
-                            ) : rewriting ? (
-                              <Badge variant="warning">대기중</Badge>
-                            ) : null
-                          )}
-                        </div>
-                      </button>
-                    ))}
+                        </button>
+                      );
+                    })}
                 </div>
               </div>
 
@@ -755,7 +842,7 @@ export default function SendPage() {
               <div>
                 <div className="flex items-center justify-between mb-3">
                   <h3 className="font-medium text-gray-900">미리보기</h3>
-                  {previewClient && enableRewrite && rewrittenContents.has(previewClient.id) && (
+                  {previewClient && enableRewrite && (
                     <label className="flex items-center gap-2 text-sm">
                       <input
                         type="checkbox"
@@ -767,6 +854,26 @@ export default function SendPage() {
                     </label>
                   )}
                 </div>
+
+                {/* 템플릿 탭 */}
+                {previewClient && selectedTemplates.length > 1 && (
+                  <div className="flex gap-1 mb-3 border-b">
+                    {selectedTemplates.map((t, idx) => (
+                      <button
+                        key={t.id}
+                        onClick={() => setPreviewTemplateIndex(idx)}
+                        className={`px-4 py-2 text-sm font-medium rounded-t-lg ${
+                          previewTemplateIndex === idx
+                            ? 'bg-blue-100 text-blue-700 border-b-2 border-blue-600'
+                            : 'text-gray-600 hover:bg-gray-100'
+                        }`}
+                      >
+                        원고 {idx + 1}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
                 {rewriting ? (
                   <div className="border rounded-lg p-8 text-center text-gray-500">
                     <svg className="animate-spin h-8 w-8 text-gray-400 mx-auto mb-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -777,45 +884,55 @@ export default function SendPage() {
                   </div>
                 ) : previewClient ? (
                   <div className="border rounded-lg p-4 bg-white max-h-[500px] overflow-y-auto">
-                    {/* Show badge */}
-                    {enableRewrite && rewrittenContents.has(previewClient.id) && !showOriginal && (
-                      <div className="flex items-center gap-2 mb-3">
-                        <Badge variant="info">리라이팅됨</Badge>
-                      </div>
-                    )}
-                    {showOriginal && (
-                      <div className="flex items-center gap-2 mb-3">
-                        <Badge variant="default">원본</Badge>
-                      </div>
-                    )}
+                    {(() => {
+                      const currentTemplate = selectedTemplates[previewTemplateIndex];
+                      const rewriteKey = `${previewClient.id}_${currentTemplate.id}`;
+                      const rewritten = rewrittenContents.get(rewriteKey);
 
-                    {/* Content */}
-                    {enableRewrite && rewrittenContents.has(previewClient.id) && !showOriginal ? (
-                      <>
-                        <h4 className="text-lg font-bold text-gray-900 mb-4">
-                          {rewrittenContents.get(previewClient.id)!.title}
-                        </h4>
-                        <MarkdownRenderer content={rewrittenContents.get(previewClient.id)!.content} />
-                        <div className="mt-4 pt-4 border-t">
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => handleRewriteSingle(previewClient)}
-                            disabled={rewriting}
-                            loading={rewriting}
-                          >
-                            다시 리라이팅
-                          </Button>
-                        </div>
-                      </>
-                    ) : (
-                      <>
-                        <h4 className="text-lg font-bold text-gray-900 mb-4">
-                          {replaceVariables(selectedTemplate.title, previewClient)}
-                        </h4>
-                        <MarkdownRenderer content={replaceVariables(selectedTemplate.content, previewClient)} />
-                      </>
-                    )}
+                      return (
+                        <>
+                          {/* Show badge */}
+                          {enableRewrite && rewritten && !showOriginal && (
+                            <div className="flex items-center gap-2 mb-3">
+                              <Badge variant="info">리라이팅됨</Badge>
+                            </div>
+                          )}
+                          {showOriginal && (
+                            <div className="flex items-center gap-2 mb-3">
+                              <Badge variant="default">원본</Badge>
+                            </div>
+                          )}
+
+                          {/* Content */}
+                          {enableRewrite && rewritten && !showOriginal ? (
+                            <>
+                              <h4 className="text-lg font-bold text-gray-900 mb-4">
+                                {rewritten.title}
+                              </h4>
+                              <MarkdownRenderer content={rewritten.content} />
+                              <div className="mt-4 pt-4 border-t">
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() => handleRewriteSingle(previewClient, currentTemplate)}
+                                  disabled={rewriting}
+                                  loading={rewriting}
+                                >
+                                  다시 리라이팅
+                                </Button>
+                              </div>
+                            </>
+                          ) : (
+                            <>
+                              <h4 className="text-lg font-bold text-gray-900 mb-4">
+                                {replaceVariables(currentTemplate.title, previewClient)}
+                              </h4>
+                              <MarkdownRenderer content={replaceVariables(currentTemplate.content, previewClient)} />
+                            </>
+                          )}
+                        </>
+                      );
+                    })()}
                   </div>
                 ) : (
                   <div className="border rounded-lg p-8 text-center text-gray-500">
@@ -832,7 +949,7 @@ export default function SendPage() {
                 loading={loading}
                 disabled={rewriting}
               >
-                {selectedClientIds.length}건 발송하기
+                {selectedClientIds.length}명 × {selectedTemplates.length}원고 발송하기
               </Button>
             </div>
           </CardContent>
@@ -863,10 +980,10 @@ export default function SendPage() {
                 닫기
               </Button>
               <Button onClick={() => {
-                handleTemplateSelect(previewTemplate);
+                handleTemplateToggle(previewTemplate);
                 setPreviewTemplate(null);
               }}>
-                이 템플릿 선택
+                {selectedTemplates.some((t) => t.id === previewTemplate.id) ? '선택 해제' : '선택'}
               </Button>
             </div>
           </div>

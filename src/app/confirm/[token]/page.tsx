@@ -10,9 +10,15 @@ interface PageProps {
   params: Promise<{ token: string }>;
 }
 
+interface ManuscriptWithClient extends Omit<Manuscript, 'client' | 'template'> {
+  client: { name: string; region: string };
+  template?: { topic: string };
+}
+
 export default function ConfirmPage({ params }: PageProps) {
   const { token } = use(params);
-  const [manuscript, setManuscript] = useState<Manuscript & { client: { name: string; region: string } } | null>(null);
+  const [manuscripts, setManuscripts] = useState<ManuscriptWithClient[]>([]);
+  const [activeTab, setActiveTab] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showRevisionForm, setShowRevisionForm] = useState(false);
@@ -28,10 +34,17 @@ export default function ConfirmPage({ params }: PageProps) {
           throw new Error('유효하지 않은 링크입니다.');
         }
         const result = await response.json();
-        setManuscript(result.data);
 
-        if (result.data.status !== 'pending') {
-          setCompleted(result.data.status);
+        // manuscripts 배열 사용 (새 API), 없으면 data 사용 (기존 호환)
+        const manuscriptList = result.manuscripts || [result.data];
+        setManuscripts(manuscriptList);
+
+        // 모든 원고가 pending이 아닌지 확인
+        const allProcessed = manuscriptList.every(
+          (m: ManuscriptWithClient) => m.status !== 'pending'
+        );
+        if (allProcessed && manuscriptList.length > 0) {
+          setCompleted(manuscriptList[0].status as 'approved' | 'revision');
         }
       } catch (err) {
         setError(err instanceof Error ? err.message : '오류가 발생했습니다.');
@@ -138,7 +151,7 @@ export default function ConfirmPage({ params }: PageProps) {
           </h1>
           <p className="text-gray-600">
             {completed === 'approved'
-              ? '원고가 승인되었습니다. 감사합니다.'
+              ? `${manuscripts.length}개의 원고가 모두 승인되었습니다. 감사합니다.`
               : '수정 요청이 접수되었습니다. 담당자가 확인 후 수정된 원고를 보내드리겠습니다.'}
           </p>
         </div>
@@ -146,7 +159,9 @@ export default function ConfirmPage({ params }: PageProps) {
     );
   }
 
-  if (!manuscript) return null;
+  if (manuscripts.length === 0) return null;
+
+  const currentManuscript = manuscripts[activeTab];
 
   return (
     <div className="min-h-screen bg-gray-50 py-8 px-4">
@@ -154,19 +169,45 @@ export default function ConfirmPage({ params }: PageProps) {
         {/* Header */}
         <div className="bg-white rounded-t-lg shadow-sm border-b px-6 py-4">
           <h1 className="text-lg font-semibold text-gray-900">
-            {manuscript.client?.name} 원고 컨펌
+            {currentManuscript.client?.name} 원고 컨펌
           </h1>
           <p className="text-sm text-gray-500 mt-1">
-            아래 원고 내용을 확인하시고 승인 또는 수정 요청을 해주세요.
+            {manuscripts.length > 1
+              ? `${manuscripts.length}개의 원고를 확인하시고 승인 또는 수정 요청을 해주세요.`
+              : '아래 원고 내용을 확인하시고 승인 또는 수정 요청을 해주세요.'}
           </p>
         </div>
+
+        {/* 원고 탭 (2개 이상일 때만 표시) */}
+        {manuscripts.length > 1 && (
+          <div className="bg-white shadow-sm border-b px-6">
+            <div className="flex gap-1">
+              {manuscripts.map((m, idx) => (
+                <button
+                  key={m.id}
+                  onClick={() => setActiveTab(idx)}
+                  className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
+                    activeTab === idx
+                      ? 'border-blue-600 text-blue-600 bg-blue-50'
+                      : 'border-transparent text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                  }`}
+                >
+                  원고 {idx + 1}
+                  {m.template?.topic && (
+                    <span className="ml-1 text-xs text-gray-400">({m.template.topic})</span>
+                  )}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Content */}
         <div className="bg-white shadow-sm px-6 py-8">
           <h2 className="text-xl font-bold text-gray-900 mb-6">
-            {manuscript.title}
+            {currentManuscript.title}
           </h2>
-          <MarkdownRenderer content={manuscript.content} />
+          <MarkdownRenderer content={currentManuscript.content} />
         </div>
 
         {/* Actions */}
@@ -178,7 +219,9 @@ export default function ConfirmPage({ params }: PageProps) {
                 value={revisionRequest}
                 onChange={(e) => setRevisionRequest(e.target.value)}
                 rows={4}
-                placeholder="수정이 필요한 부분을 자세히 적어주세요."
+                placeholder={manuscripts.length > 1
+                  ? "수정이 필요한 부분을 자세히 적어주세요. (모든 원고에 동일하게 적용됩니다)"
+                  : "수정이 필요한 부분을 자세히 적어주세요."}
                 required
               />
               <div className="flex gap-3">
@@ -188,7 +231,7 @@ export default function ConfirmPage({ params }: PageProps) {
                   variant="danger"
                   className="flex-1"
                 >
-                  수정 요청 제출
+                  {manuscripts.length > 1 ? `전체 ${manuscripts.length}개 수정 요청` : '수정 요청 제출'}
                 </Button>
                 <Button
                   variant="secondary"
@@ -202,24 +245,31 @@ export default function ConfirmPage({ params }: PageProps) {
               </div>
             </div>
           ) : (
-            <div className="flex flex-col sm:flex-row gap-3">
-              <Button
-                onClick={handleApprove}
-                loading={submitting}
-                variant="success"
-                size="lg"
-                className="flex-1"
-              >
-                승인하기
-              </Button>
-              <Button
-                variant="secondary"
-                size="lg"
-                onClick={() => setShowRevisionForm(true)}
-                className="flex-1"
-              >
-                수정 요청하기
-              </Button>
+            <div className="space-y-4">
+              {manuscripts.length > 1 && (
+                <p className="text-sm text-gray-500 text-center">
+                  승인 또는 수정 요청 시 {manuscripts.length}개의 원고가 모두 처리됩니다.
+                </p>
+              )}
+              <div className="flex flex-col sm:flex-row gap-3">
+                <Button
+                  onClick={handleApprove}
+                  loading={submitting}
+                  variant="success"
+                  size="lg"
+                  className="flex-1"
+                >
+                  {manuscripts.length > 1 ? `전체 ${manuscripts.length}개 승인하기` : '승인하기'}
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="lg"
+                  onClick={() => setShowRevisionForm(true)}
+                  className="flex-1"
+                >
+                  수정 요청하기
+                </Button>
+              </div>
             </div>
           )}
         </div>

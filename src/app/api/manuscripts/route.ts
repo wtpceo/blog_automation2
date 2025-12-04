@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 import { replaceVariables, generateConfirmToken } from '@/lib/utils';
 import { sendBulkAlimtalk } from '@/lib/notification';
+import { v4 as uuidv4 } from 'uuid';
 
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
@@ -42,17 +43,19 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   const body = await request.json();
-  const { template_id, client_ids, rewritten_contents } = body;
+  const { template_ids, client_ids, rewritten_contents } = body;
 
-  // Get template
-  const { data: template, error: templateError } = await supabaseAdmin
+  // 단일 템플릿 호환성 유지 (template_id도 지원)
+  const templateIdList = template_ids || [body.template_id];
+
+  // Get templates
+  const { data: templates, error: templatesError } = await supabaseAdmin
     .from('templates')
     .select('*')
-    .eq('id', template_id)
-    .single();
+    .in('id', templateIdList);
 
-  if (templateError || !template) {
-    return NextResponse.json({ error: 'Template not found' }, { status: 404 });
+  if (templatesError || !templates?.length) {
+    return NextResponse.json({ error: 'Templates not found' }, { status: 404 });
   }
 
   // Get clients
@@ -66,21 +69,47 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'No valid clients found' }, { status: 404 });
   }
 
-  // Create manuscripts for each client
-  // Use rewritten content if available, otherwise use template with variable replacement
-  const manuscripts = clients.map((client) => {
-    const rewritten = rewritten_contents?.[client.id];
-    return {
-      client_id: client.id,
-      template_id: template.id,
-      title: rewritten?.title || replaceVariables(template.title, client),
-      content: rewritten?.content || replaceVariables(template.content, client),
-      status: 'pending' as const,
-      revision_count: 0,
-      confirm_token: generateConfirmToken(),
-      sent_at: new Date().toISOString(),
-    };
+  // 클라이언트별 group_id 생성 (같은 클라이언트의 원고들을 그룹으로 묶음)
+  const clientGroupIds: Record<string, string> = {};
+  clients.forEach((client) => {
+    clientGroupIds[client.id] = uuidv4();
   });
+
+  // Create manuscripts for each client x template combination
+  const manuscripts: Array<{
+    client_id: string;
+    template_id: string;
+    title: string;
+    content: string;
+    status: 'pending';
+    revision_count: number;
+    confirm_token: string;
+    sent_at: string;
+    group_id: string;
+  }> = [];
+
+  for (const client of clients) {
+    const groupId = clientGroupIds[client.id];
+    // 첫 번째 원고에만 confirm_token 부여 (그룹 대표)
+    const groupToken = generateConfirmToken();
+
+    for (let i = 0; i < templates.length; i++) {
+      const template = templates[i];
+      const rewritten = rewritten_contents?.[template.id]?.[client.id];
+
+      manuscripts.push({
+        client_id: client.id,
+        template_id: template.id,
+        title: rewritten?.title || replaceVariables(template.title, client),
+        content: rewritten?.content || replaceVariables(template.content, client),
+        status: 'pending' as const,
+        revision_count: 0,
+        confirm_token: i === 0 ? groupToken : generateConfirmToken(), // 첫 번째만 대표 토큰
+        sent_at: new Date().toISOString(),
+        group_id: groupId,
+      });
+    }
+  }
 
   const { data: insertedManuscripts, error: insertError } = await supabaseAdmin
     .from('manuscripts')
@@ -91,21 +120,26 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: insertError.message }, { status: 500 });
   }
 
-  // Update template send_count
-  await supabaseAdmin
-    .from('templates')
-    .update({ send_count: template.send_count + clients.length })
-    .eq('id', template_id);
+  // Update templates send_count
+  for (const template of templates) {
+    await supabaseAdmin
+      .from('templates')
+      .update({ send_count: (template.send_count || 0) + clients.length })
+      .eq('id', template.id);
+  }
 
-  // Generate confirm links
+  // Generate confirm links (클라이언트당 1개, 첫 번째 원고의 토큰 사용)
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
-  const confirmLinks = insertedManuscripts?.map((m) => {
-    const client = clients.find((c) => c.id === m.client_id);
+  const confirmLinks = clients.map((client) => {
+    // 해당 클라이언트의 첫 번째 원고 찾기
+    const firstManuscript = insertedManuscripts?.find(
+      (m) => m.client_id === client.id && m.group_id === clientGroupIds[client.id]
+    );
     return {
-      client_id: m.client_id,
-      client_name: client?.name,
-      confirm_url: `${appUrl}/confirm/${m.confirm_token}`,
-      phone_number: client?.contact,
+      client_id: client.id,
+      client_name: client.name,
+      confirm_url: `${appUrl}/confirm/${firstManuscript?.confirm_token}`,
+      phone_number: client.contact,
     };
   });
 
@@ -115,7 +149,7 @@ export async function POST(request: NextRequest) {
       phoneNumber: link.phone_number || '',
       confirmUrl: link.confirm_url,
       clientName: link.client_name || '',
-      templateTitle: template.title,
+      templateTitle: templates.map((t) => t.title).join(', '),
     }));
 
     const alimtalkResult = await sendBulkAlimtalk(alimtalkRecipients);

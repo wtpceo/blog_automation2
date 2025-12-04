@@ -306,6 +306,45 @@ export default function DashboardPage() {
               </div>
             )}
 
+            {/* 승인된 원고 - 복사 버튼 */}
+            {(detailModal.manuscript.status === 'approved' || detailModal.manuscript.status === 'auto_approved') && (
+              <div className="pt-4 border-t space-y-3">
+                <p className="text-sm font-medium text-green-700">✅ 승인된 원고 - 블로그 발행용</p>
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => {
+                      navigator.clipboard.writeText(detailModal.manuscript?.title || '');
+                      alert('제목이 복사되었습니다.');
+                    }}
+                  >
+                    📋 제목 복사
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => {
+                      navigator.clipboard.writeText(detailModal.manuscript?.content || '');
+                      alert('본문이 복사되었습니다.');
+                    }}
+                  >
+                    📋 본문 복사
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={() => {
+                      const text = `${detailModal.manuscript?.title}\n\n${detailModal.manuscript?.content}`;
+                      navigator.clipboard.writeText(text);
+                      alert('제목+본문이 복사되었습니다.');
+                    }}
+                  >
+                    📋 전체 복사
+                  </Button>
+                </div>
+              </div>
+            )}
+
             {detailModal.manuscript.status === 'pending' && (
               <div className="pt-4 border-t">
                 <label className="text-sm text-gray-500">컨펌 링크</label>
