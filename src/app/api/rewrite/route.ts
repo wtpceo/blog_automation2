@@ -20,10 +20,28 @@ const REWRITE_PROMPT = `아래 블로그 원고를 같은 의미와 맥락을 �
 [본문]
 (리라이팅된 본문)`;
 
+const REVISION_PROMPT = `당신은 블로그 원고 수정 전문가입니다. 광고주가 요청한 수정 사항을 반영하여 원고를 수정해주세요.
+
+## 수정 원칙
+1. 광고주의 수정 요청 사항을 정확히 반영하세요.
+2. 수정이 요청된 부분만 변경하고, 나머지 내용은 최대한 유지하세요.
+3. 전체적인 글의 흐름과 톤은 유지하세요.
+4. 마크다운 형식을 유지하세요.
+5. 업체명, 지역명 등 핵심 키워드는 그대로 유지하세요.
+
+## 출력 형식
+반드시 아래 형식으로만 출력하세요:
+
+[제목]
+(수정된 제목)
+
+[본문]
+(수정된 본문)`;
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { title, content } = body;
+    const { title, content, revision_request, mode } = body;
 
     if (!title || !content) {
       return NextResponse.json(
@@ -39,7 +57,27 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const userMessage = `${REWRITE_PROMPT}
+    let userMessage: string;
+
+    // mode가 'revision'이고 revision_request가 있으면 수정 요청 기반 수정
+    if (mode === 'revision' && revision_request) {
+      userMessage = `${REVISION_PROMPT}
+
+---
+## 광고주 수정 요청 내용
+${revision_request}
+
+---
+## 현재 원고
+
+제목: ${title}
+
+본문:
+${content}
+---`;
+    } else {
+      // 기존 리라이팅 모드
+      userMessage = `${REWRITE_PROMPT}
 
 ---
 원본 제목: ${title}
@@ -47,6 +85,7 @@ export async function POST(request: NextRequest) {
 원본 본문:
 ${content}
 ---`;
+    }
 
     const message = await anthropic.messages.create({
       model: 'claude-sonnet-4-20250514',

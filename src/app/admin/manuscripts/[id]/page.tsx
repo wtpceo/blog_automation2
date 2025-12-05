@@ -44,6 +44,10 @@ export default function ManuscriptDetailPage({ params }: PageProps) {
   const [showOriginal, setShowOriginal] = useState(false);
   const [rewriteError, setRewriteError] = useState<string | null>(null);
 
+  // AI 수정 states
+  const [aiRevising, setAiRevising] = useState(false);
+  const [aiReviseError, setAiReviseError] = useState<string | null>(null);
+
   useEffect(() => {
     const fetchManuscript = async () => {
       try {
@@ -141,6 +145,41 @@ export default function ManuscriptDetailPage({ params }: PageProps) {
     setPreviewContent(originalPreviewContent);
     setIsRewritten(false);
     setShowOriginal(false);
+  };
+
+  // AI가 수정 요청 내용을 반영하여 원고 수정
+  const handleAiRevise = async () => {
+    if (!manuscript?.revision_request) return;
+
+    setAiRevising(true);
+    setAiReviseError(null);
+
+    try {
+      const response = await fetch('/api/rewrite', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: editedTitle,
+          content: editedContent,
+          revision_request: manuscript.revision_request,
+          mode: 'revision',
+        }),
+      });
+
+      const result = await response.json();
+
+      if (response.ok) {
+        setEditedTitle(result.title);
+        setEditedContent(result.content);
+        setSuccess('AI가 수정 요청 내용을 반영하여 원고를 수정했습니다. 내용을 확인 후 재발송해주세요.');
+      } else {
+        setAiReviseError(result.error || 'AI 수정에 실패했습니다.');
+      }
+    } catch {
+      setAiReviseError('AI 수정 중 오류가 발생했습니다.');
+    } finally {
+      setAiRevising(false);
+    }
   };
 
   const handleResend = async () => {
@@ -328,15 +367,33 @@ export default function ManuscriptDetailPage({ params }: PageProps) {
         {manuscript.status === 'revision' && manuscript.revision_request && (
           <Card className="border-red-300 border-2">
             <CardHeader className="bg-red-50 border-b border-red-200">
-              <CardTitle className="text-red-800 flex items-center gap-2">
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                </svg>
-                광고주 수정 요청 내용
+              <CardTitle className="text-red-800 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                  </svg>
+                  광고주 수정 요청 내용
+                </div>
+                <Button
+                  onClick={handleAiRevise}
+                  loading={aiRevising}
+                  disabled={aiRevising}
+                  size="sm"
+                  variant="primary"
+                  className="bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700"
+                >
+                  <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                  </svg>
+                  AI 수정
+                </Button>
               </CardTitle>
             </CardHeader>
             <CardContent className="bg-red-50 py-4">
               <p className="text-red-800 whitespace-pre-wrap text-base leading-relaxed">{manuscript.revision_request}</p>
+              {aiReviseError && (
+                <p className="mt-3 text-sm text-red-600 bg-red-100 p-2 rounded">{aiReviseError}</p>
+              )}
             </CardContent>
           </Card>
         )}
