@@ -8,16 +8,11 @@ const TEMPLATE_ID = process.env.SOLAPI_TEMPLATE_ID || '';
 interface AlimtalkMessage {
   to: string;
   from: string;
+  type: 'ATA';
   kakaoOptions: {
     pfId: string;
     templateId: string;
     variables: Record<string, string>;
-    buttons?: Array<{
-      buttonType: string;
-      buttonName: string;
-      linkMo?: string;
-      linkPc?: string;
-    }>;
   };
 }
 
@@ -56,6 +51,7 @@ export async function sendAlimtalk(
     const message: AlimtalkMessage = {
       to,
       from: process.env.SOLAPI_SENDER_NUMBER || '',
+      type: 'ATA',
       kakaoOptions: {
         pfId: PFID,
         templateId: TEMPLATE_ID,
@@ -68,7 +64,7 @@ export async function sendAlimtalk(
 
     console.log('[Solapi] Sending message:', JSON.stringify(message, null, 2));
 
-    const response = await fetch('https://api.solapi.com/messages/v4/send', {
+    const response = await fetch('https://api.solapi.com/messages/v4/send-many/detail', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
