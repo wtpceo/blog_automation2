@@ -15,6 +15,9 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "블로그 자동화 시스템",
   description: "브랜드 블로그 원고 관리 및 컨펌 시스템",
+  icons: {
+    icon: "/favicon.png",
+  },
 };
 
 export default function RootLayout({
