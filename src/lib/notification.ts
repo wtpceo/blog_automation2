@@ -17,6 +17,7 @@ interface AlimtalkResult {
   success: boolean;
   messageId?: string;
   error?: string;
+  phoneNumber?: string;
 }
 
 /**
@@ -77,7 +78,7 @@ export async function sendBulkAlimtalk(
 
   for (const recipient of recipients) {
     const result = await sendAlimtalk(recipient);
-    results.push(result);
+    results.push({ ...result, phoneNumber: recipient.phoneNumber });
 
     if (result.success) {
       successCount++;

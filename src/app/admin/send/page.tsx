@@ -51,7 +51,7 @@ export default function SendPage() {
   const [confirmLinks, setConfirmLinks] = useState<ConfirmLink[]>([]);
   const [sendComplete, setSendComplete] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
-  const [alimtalkResult, setAlimtalkResult] = useState<{ total: number; success: number; failed: number } | null>(null);
+  const [alimtalkResult, setAlimtalkResult] = useState<{ total: number; success: number; failed: number; errors?: Array<{ phone: string; error: string }> } | null>(null);
 
   // Rewrite states
   const [enableRewrite, setEnableRewrite] = useState(true);
@@ -417,7 +417,15 @@ export default function SendPage() {
               <p className="text-gray-600">아래 컨펌 링크를 광고주에게 전달해주세요.</p>
               {alimtalkResult && (
                 <div className={`mt-4 p-3 rounded-lg ${alimtalkResult.success > 0 ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-800'}`}>
-                  알림톡: 총 {alimtalkResult.total}건 중 성공 {alimtalkResult.success}건, 실패 {alimtalkResult.failed}건
+                  <p>알림톡: 총 {alimtalkResult.total}건 중 성공 {alimtalkResult.success}건, 실패 {alimtalkResult.failed}건</p>
+                  {alimtalkResult.errors && alimtalkResult.errors.length > 0 && (
+                    <div className="mt-2 text-sm">
+                      <p className="font-medium">에러 상세:</p>
+                      {alimtalkResult.errors.map((err, idx) => (
+                        <p key={idx} className="text-red-600">{err.phone}: {err.error}</p>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
             </div>

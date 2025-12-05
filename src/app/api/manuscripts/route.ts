@@ -161,6 +161,9 @@ export async function POST(request: NextRequest) {
         total: alimtalkResult.total,
         success: alimtalkResult.success,
         failed: alimtalkResult.failed,
+        errors: alimtalkResult.results
+          .filter((r) => !r.success)
+          .map((r) => ({ phone: r.phoneNumber, error: r.error })),
       },
     }, { status: 201 });
   }
