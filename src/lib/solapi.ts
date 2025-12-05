@@ -42,11 +42,8 @@ export async function sendAlimtalk(
   try {
     const { authorization } = generateSignature();
 
-    // 전화번호 포맷 (하이픈 제거, 국가코드 추가)
-    const formattedPhone = phoneNumber.replace(/-/g, '');
-    const to = formattedPhone.startsWith('0')
-      ? '82' + formattedPhone.slice(1)
-      : formattedPhone;
+    // 전화번호 포맷 (하이픈 제거만, 국가코드 불필요)
+    const to = phoneNumber.replace(/-/g, '');
 
     const message: AlimtalkMessage = {
       to,
@@ -68,6 +65,8 @@ export async function sendAlimtalk(
       },
     };
 
+    console.log('[Solapi] Sending message:', JSON.stringify(message, null, 2));
+
     const response = await fetch('https://api.solapi.com/messages/v4/send', {
       method: 'POST',
       headers: {
@@ -75,23 +74,35 @@ export async function sendAlimtalk(
         Authorization: authorization,
       },
       body: JSON.stringify({
-        message,
+        messages: [message],
       }),
     });
 
+    console.log('[Solapi] Response status:', response.status);
+
     const result = await response.json();
+    console.log('[Solapi] Response body:', JSON.stringify(result, null, 2));
 
     if (!response.ok) {
-      console.error('Solapi API Error:', result);
+      console.error('[Solapi] API Error:', result);
       return {
         success: false,
-        error: result.errorMessage || 'Failed to send alimtalk',
+        error: result.errorMessage || result.message || JSON.stringify(result),
+      };
+    }
+
+    // 성공 응답 처리 (groupId가 있으면 성공)
+    if (result.groupId) {
+      console.log('[Solapi] Success! GroupId:', result.groupId);
+      return {
+        success: true,
+        messageId: result.groupId,
       };
     }
 
     return {
       success: true,
-      messageId: result.messageId,
+      messageId: result.messageId || result.groupId,
     };
   } catch (error) {
     console.error('Solapi Send Error:', error);
