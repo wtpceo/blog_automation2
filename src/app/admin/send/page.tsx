@@ -51,6 +51,7 @@ export default function SendPage() {
   const [confirmLinks, setConfirmLinks] = useState<ConfirmLink[]>([]);
   const [sendComplete, setSendComplete] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [alimtalkResult, setAlimtalkResult] = useState<{ total: number; success: number; failed: number } | null>(null);
 
   // Rewrite states
   const [enableRewrite, setEnableRewrite] = useState(true);
@@ -320,8 +321,10 @@ export default function SendPage() {
       });
 
       const result = await response.json();
+      console.log('Send result:', result);
       if (response.ok) {
         setConfirmLinks(result.confirmLinks || []);
+        setAlimtalkResult(result.alimtalk || null);
         setSendComplete(true);
       }
     } finally {
@@ -364,6 +367,7 @@ export default function SendPage() {
     setConfirmLinks([]);
     setSendComplete(false);
     setCopiedId(null);
+    setAlimtalkResult(null);
     setEnableRewrite(true);
     setRewrittenContents(new Map());
     setShowOriginal(false);
@@ -411,6 +415,11 @@ export default function SendPage() {
                 {confirmLinks.length}건의 원고가 발송되었습니다
               </h2>
               <p className="text-gray-600">아래 컨펌 링크를 광고주에게 전달해주세요.</p>
+              {alimtalkResult && (
+                <div className={`mt-4 p-3 rounded-lg ${alimtalkResult.success > 0 ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-800'}`}>
+                  알림톡: 총 {alimtalkResult.total}건 중 성공 {alimtalkResult.success}건, 실패 {alimtalkResult.failed}건
+                </div>
+              )}
             </div>
 
             <div className="bg-gray-50 rounded-lg p-4 mb-6">
