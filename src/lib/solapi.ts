@@ -21,17 +21,22 @@ interface AlimtalkMessage {
   };
 }
 
-function generateSignature(): { authorization: string; timestamp: string } {
-  const timestamp = Date.now().toString();
+function generateSignature(): { authorization: string; date: string } {
+  // ISO 8601 형식: YYYY-MM-DD HH:mm:ss (Asia/Seoul 기준)
+  const now = new Date();
+  const kstOffset = 9 * 60 * 60 * 1000; // KST = UTC + 9
+  const kstDate = new Date(now.getTime() + kstOffset);
+  const date = kstDate.toISOString().replace('T', ' ').substring(0, 19);
+
   const salt = crypto.randomBytes(32).toString('hex');
   const signature = crypto
     .createHmac('sha256', API_SECRET)
-    .update(timestamp + salt)
+    .update(date + salt)
     .digest('hex');
 
-  const authorization = `HMAC-SHA256 apiKey=${API_KEY}, date=${timestamp}, salt=${salt}, signature=${signature}`;
+  const authorization = `HMAC-SHA256 apiKey=${API_KEY}, date=${date}, salt=${salt}, signature=${signature}`;
 
-  return { authorization, timestamp };
+  return { authorization, date };
 }
 
 export async function sendAlimtalk(
