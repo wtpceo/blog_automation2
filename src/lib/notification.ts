@@ -1,10 +1,10 @@
 /**
  * 알림톡 발송 모듈
  *
- * BizGo OMNI API를 사용하여 실제 알림톡 발송
+ * Solapi API를 사용하여 알림톡 발송
  */
 
-import { sendAlimtalk as sendBizgoAlimtalk } from './bizgo';
+import { sendAlimtalk as sendSolapiAlimtalk } from './solapi';
 
 interface AlimtalkParams {
   phoneNumber: string;
@@ -35,7 +35,7 @@ export async function sendAlimtalk(params: AlimtalkParams): Promise<AlimtalkResu
   }
 
   console.log('='.repeat(50));
-  console.log('[알림톡 발송]');
+  console.log('[알림톡 발송 - Solapi]');
   console.log(`  광고주: ${clientName}`);
   console.log(`  전화번호: ${phoneNumber}`);
   console.log(`  컨펌링크: ${confirmUrl}`);
@@ -45,20 +45,13 @@ export async function sendAlimtalk(params: AlimtalkParams): Promise<AlimtalkResu
   console.log(`  발송시각: ${new Date().toISOString()}`);
   console.log('='.repeat(50));
 
-  // BizGo API를 통한 실제 알림톡 발송
-  const result = await sendBizgoAlimtalk({
-    templateCode: 'wiz1',
-    phone: phoneNumber,
-    variables: {
-      '변수내용1': clientName,
-      '변수내용2': confirmUrl,
-    },
-  });
+  // Solapi API를 통한 알림톡 발송
+  const result = await sendSolapiAlimtalk(phoneNumber, clientName, confirmUrl);
 
   if (result.success) {
     return {
       success: true,
-      messageId: result.msgKey,
+      messageId: result.messageId,
     };
   } else {
     console.error('[알림톡 발송 실패]', result.error);
@@ -91,6 +84,9 @@ export async function sendBulkAlimtalk(
     } else {
       failedCount++;
     }
+
+    // Rate limiting
+    await new Promise((resolve) => setTimeout(resolve, 100));
   }
 
   console.log(`[알림톡 대량발송 완료] 총 ${recipients.length}건 중 성공 ${successCount}건, 실패 ${failedCount}건`);
@@ -107,52 +103,14 @@ export async function sendBulkAlimtalk(
  * 수정 완료 알림톡 발송
  */
 export async function sendRevisionCompleteAlimtalk(params: AlimtalkParams): Promise<AlimtalkResult> {
-  const { phoneNumber, confirmUrl, clientName } = params;
-
-  if (!phoneNumber) {
-    console.warn('[알림톡] 전화번호 없음 - 발송 스킵:', clientName);
-    return { success: false, error: 'No phone number' };
-  }
-
-  const result = await sendBizgoAlimtalk({
-    templateCode: 'wiz2',
-    phone: phoneNumber,
-    variables: {
-      '변수내용1': clientName,
-      '변수내용2': confirmUrl,
-    },
-  });
-
-  return {
-    success: result.success,
-    messageId: result.msgKey,
-    error: result.error,
-  };
+  // 현재는 동일한 템플릿 사용 (추후 별도 템플릿 등록 시 변경)
+  return sendAlimtalk(params);
 }
 
 /**
  * 리마인드 알림톡 발송 (48시간 미확인 시)
  */
 export async function sendReminderAlimtalk(params: AlimtalkParams): Promise<AlimtalkResult> {
-  const { phoneNumber, confirmUrl, clientName } = params;
-
-  if (!phoneNumber) {
-    console.warn('[알림톡] 전화번호 없음 - 발송 스킵:', clientName);
-    return { success: false, error: 'No phone number' };
-  }
-
-  const result = await sendBizgoAlimtalk({
-    templateCode: 'wiz3',
-    phone: phoneNumber,
-    variables: {
-      '변수내용1': clientName,
-      '변수내용2': confirmUrl,
-    },
-  });
-
-  return {
-    success: result.success,
-    messageId: result.msgKey,
-    error: result.error,
-  };
+  // 현재는 동일한 템플릿 사용 (추후 별도 템플릿 등록 시 변경)
+  return sendAlimtalk(params);
 }
