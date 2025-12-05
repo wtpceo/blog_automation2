@@ -45,6 +45,9 @@ export async function sendAlimtalk(
     // 전화번호 포맷 (하이픈 제거만, 국가코드 불필요)
     const to = phoneNumber.replace(/-/g, '');
 
+    // confirmUrl에서 https:// 제거 (템플릿에 https://#{url}로 설정되어 있음)
+    const urlWithoutProtocol = confirmUrl.replace(/^https?:\/\//, '');
+
     const message: AlimtalkMessage = {
       to,
       from: process.env.SOLAPI_SENDER_NUMBER || '',
@@ -53,15 +56,8 @@ export async function sendAlimtalk(
         templateId: TEMPLATE_ID,
         variables: {
           '#{고객명}': clientName,
+          '#{url}': urlWithoutProtocol,
         },
-        buttons: [
-          {
-            buttonType: 'WL',
-            buttonName: '원고 확인하기',
-            linkMo: confirmUrl,
-            linkPc: confirmUrl,
-          },
-        ],
       },
     };
 
